@@ -1,4 +1,4 @@
-name: Deploy to ECR
+name: Deploy to EKS
 
 on: 
   push:
@@ -6,6 +6,7 @@ on:
 
 env:
   ECR_REPOSITORY: milestone-3-repository
+  EKS_CLUSTER_NAME: milestone-3-cluster
   AWS_REGION: ap-south-1
 
 jobs:
@@ -53,18 +54,14 @@ jobs:
         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
         echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-    - name: Fill in the new image ID in the Amazon ECS task definition
-      id: task-def
-      uses: aws-actions/amazon-ecs-render-task-definition@v1
-      with:
-        task-definition: Task01.json
-        container-name: milestone-project-container
-        image: ${{ steps.build-image.outputs.image }}    
-          
-    - name: Deploy Amazon ECS task definition
-      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      with:
-        task-definition: ${{ steps.task-def.outputs.task-definition }}
-        service: Service01
-        cluster: milestone-3-cluster
-        wait-for-service-stability: true
+    - name: Update kube config
+      run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+    - name: Deploy to EKS
+      env: 
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ steps.commit.outputs.short }}
+      run: |
+        kubectl rollout restart deployment/webapp-deployment
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
